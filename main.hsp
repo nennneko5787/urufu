@@ -1,0 +1,35 @@
+#include "user32.as"
+#include "mod_WebView2.hsp"
+#packopt hide 1
+
+	screen 0,ginfo(20),ginfo(21),2,,,640,480
+	GetWindowLong hwnd,-16
+	SetWindowLong hwnd,-16,stat|$10000|$40000
+	gsel 0,1
+	oncmd gosub *resize,0x5	//WM_SIZE。ウィンドウサイズ変更時にここにジャンプする。
+	title "urufu! - Initialize..."
+
+	pEnv = WebView2_CreateEnv()
+	pCtrl = WebView2_CreateCtrl(pEnv, hwnd)
+	WebView2_Size pCtrl, 0, 0, ginfo_winx, ginfo_winy
+	pView = WebView2_GetView(pCtrl)
+	WebView2_Navigate pView, "https://zinro.net/m/"
+	onexit *ONEXIT_
+	title "urufu!"
+	stop
+
+
+*resize
+	if (wParam=0)|(wParam=2) {
+		//
+		//以下、ウィンドウのサイズが変わった時の処理を書く
+		//
+		WebView2_Size pCtrl, 0, 0, ginfo_winx, ginfo_winy
+	}
+	return 0
+
+*ONEXIT_
+	WebView2_Release pView
+	WebView2_Release pCtrl
+	WebView2_Release pEnv
+	end
