@@ -1,5 +1,17 @@
+#include "hsp3utf.as"
+#include "hspinet.as"
 #include "user32.as"
 #include "mod_WebView2.hsp"
+#include "regedit.hsp"
+#uselib "psapi.dll"
+#func EnumProcesses "EnumProcesses" var, int, var
+#cfunc EnumProcessModules "EnumProcessModules" int, var, int, var
+#func GetModuleFileNameEx "GetModuleFileNameExA" int, int, var, int
+#func GetModuleBaseName "GetModuleBaseNameA" int, int, var, int
+
+; 変数の宣言
+dim proc, 1000000
+dim ret
 #packopt hide 1
 
 	screen 0,ginfo(20),ginfo(21),2,,,640,480
@@ -9,13 +21,101 @@
 	oncmd gosub *resize,0x5	//WM_SIZE。ウィンドウサイズ変更時にここにジャンプする。
 	title "urufu! - Initialize..."
 
+	//WebView2のランタイムが入っているかを調べる
+	netinit //このときのためにhspinet初期化
+	//①物理(64Bit)
+	poke null, 0, 0
+	ap=""
+	egdeinst=0
+	NewRegEdit_init 1
+	if stat=-1:dialog "WebView2 Install Error"
+	ap = NewRegEdit_get("SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}","pv")
+	if ap="" or ap="0.0.0.0"{
+		egdeinst+=1
+	}
+	//①ユーザー(64Bit)
+	NewRegEdit_init 0
+	if stat=-1:dialog "WebView2 Install Error"
+	ap = NewRegEdit_get("Software\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}","pv")
+	if ap="" or ap="0.0.0.0"{
+		egdeinst+=1
+	}
+	//①物理(32Bit)
+	NewRegEdit_init 1
+	if stat=-1:dialog "WebView2 Install Error"
+	ap = NewRegEdit_get("SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}","pv")
+	if ap="" or ap="0.0.0.0"{
+		egdeinst+=1
+	}
+	//①ユーザー(32Bit)
+	NewRegEdit_init 0
+	if stat=-1:dialog "WebView2 Install Error"
+	ap = NewRegEdit_get("Software\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}","pv")
+	if ap="" or ap="0.0.0.0"{
+		egdeinst+=1
+	}
+	
+	if egdeinst>=4{
+		dialog "WebView2が見つかりませんでした。\nWebView2をインストールしますか?",2,"WebView2をインストールしますか?"
+		if stat=6{
+			netagent "urufu!(Twitter @nennneko5787)"
+			neturl "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/4f652adb-cc22-484f-a973-7e5d9c4a0ca1/
+			netload "MicrosoftEdgeWebview2Setup.exe"
+			exec "MicrosoftEdgeWebview2Setup.exe /silent /install"
+			repeat
+				title "urufu! - WebView2 Install...("+str(cnt)+" Count)"
+				_p = 0
+				; 起動中のプロセスリスト取得
+				EnumProcesses proc, length(proc), ret
+				; プロセスリストから指定のプロセスを取得
+				repeat ret / 4
+				; プロセスハンドルを取得
+				hProc = OpenProcess(0x400 | 0x0010 | 0x0001, 0, proc(cnt))
+				; プロセスハンドルが取得できたら
+				if hProc {
+					if(EnumProcessModules(hProc, list, 4, ret)) {
+						sdim file, 256
+						sdim file_name, 256
+						; モジュール名とモジュールのプルパス取得
+						GetModuleFileNameEx hProc, list, file, 256
+						GetModuleBaseName hProc, list, file_name, 256
+						; 終了させたいモジュール名だったら(小文字限定)
+						if(getpath(file, 8) = "MicrosoftEdgeWebview2Setup.exe") {    //←ここに終了したいプロセス名をいれる。
+							_p = 1
+						}
+					}
+					; プロセスハンドルを閉じる
+					CloseHandle hProc
+				}
+				await
+				loop
+				await
+				if _p = 0:break
+			loop
+		}else{
+			end
+		}
+	}
+	exist "MicrosoftEdgeWebview2Setup.exe"
+	if strsize != -1:delete "MicrosoftEdgeWebview2Setup.exe"
+	//終わり
+	title "urufu! - Initialize..."
+
 	pEnv = WebView2_CreateEnv()
 	pCtrl = WebView2_CreateCtrl(pEnv, hwnd)
 	WebView2_Size pCtrl, 0, 0, ginfo_winx, ginfo_winy
 	pView = WebView2_GetView(pCtrl)
 	WebView2_Navigate pView, "https://zinro.net/m/"
-	onexit *ONEXIT_
+	onexit gosub *ONEXIT_
 	title "urufu!"
+	screen 1,480,240
+	gsel 1,2
+	title "urufu! - メモ欄"
+	memo=""
+	objmode objmode_usecolor,0
+	color 0,0,0
+	objcolor 255,255,255
+	mesbox memo,ginfo_winx,ginfo_winy,1,0
 	stop
 
 
@@ -24,12 +124,17 @@
 		//
 		//以下、ウィンドウのサイズが変わった時の処理を書く
 		//
+		gsel 0
 		WebView2_Size pCtrl, 0, 0, ginfo_winx, ginfo_winy
 	}
 	return 0
 
 *ONEXIT_
-	WebView2_Release pView
-	WebView2_Release pCtrl
-	WebView2_Release pEnv
-	end
+	dialog "本当に終了しますか?",2,"urufu!"
+	if stat=6{
+		WebView2_Release pView
+		WebView2_Release pCtrl
+		WebView2_Release pEnv
+		end
+	}
+	return

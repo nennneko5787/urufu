@@ -1,0 +1,893 @@
+/*
+レジストリ編集モジュール
+HSPでレジストリを編集するモジュールです。
+ 
+※ライセンス表示
+      当ソースコードのライセンス表示は以下のとおりです。
+      ライセンスは3条項BSDライセンスに相当します。
+      (凡例: #著作権表示 *本条件 +免責条項)
+    -----------------------------------------------------------------------
+    # Copyright (c) 2020,SekiSekki
+      All rights reserved.
+ 
+      ソースコード形式かバイナリ形式か、変更するかしないかを問わず、
+      以下の条件を満たす場合に限り、再頒布および使用が許可されます。
+ 
+    * ソースコードを再頒布する場合、上記の著作権表示、本条件一覧、
+      および下記免責条項を含めること。
+ 
+    * バイナリ形式で再頒布する場合、頒布物に付属のドキュメント等の資料に、
+      上記の著作権表示、本条件一覧、および下記免責条項を含めること。
+ 
+    * 書面による特別の許可なしに、本ソフトウェアから派生した製品の宣伝または
+      販売促進に、SekiSekki(SekiSekki.net)の名前またはコントリビューターの名前を
+      使用してはならない。
+ 
+    + 本ソフトウェアは、著作権者およびコントリビューターによって「現状のまま」
+      提供されており、明示黙示を問わず、商業的な使用可能性、および特定の目的に対する
+      適合性に関する暗黙の保証も含め、またそれに限定されない、いかなる保証もありません。
+      著作権者もコントリビューターも、事由のいかんを問わず、 損害発生の原因いかんを
+      問わず、かつ責任の根拠が契約であるか厳格責任であるか（過失その他の）不法行為で
+      あるかを問わず、仮にそのような損害が発生する可能性を知らされていたとしても、
+      本ソフトウェアの使用によって発生した（代替品または代用サービスの調達、
+      使用の喪失、データの喪失、利益の喪失、業務の中断も含め、またそれに限定されない）
+      直接損害、間接損害、偶発的な損害、特別損害、懲罰的損害、または結果損害について、
+      一切責任を負わないものとします。
+    -----------------------------------------------------------------------
+*/
+ 
+/*-------------------
+%dll;HDL対応コメント
+NewRegEdit
+レジストリ編集モジュール
+HSPでレジストリを編集するモジュールです。
+ 
+%port
+Win
+ 
+%author
+Copyright(C) SekiSekki
+ 
+%url
+https://sekisekki.net/
+ 
+%note
+regedit.hspをcommonフォルダにコピーして、#include でインクルードすることで使用可能。
+commonフォルダ内にこのファイルが存在するとき、HSP Docs Libraryに自動的に命令が登録されます。
+ 
+%group
+外部拡張モジュール
+ 
+///////////////////////////////////////////
+ 
+%index
+NewRegEdit
+レジストリ編集モジュール(概要とサンプルスクリプト)
+ 
+%inst
+概要
+レジストリ編集モジュール
+HSPでレジストリを編集するモジュールです。
+ 
+特徴
+・HSPEXT.dllを使用せずにWindowsのレジストリの読出し、書き込みができます。
+・HSPEXT.dllではサポートしていない、セクションの型の編集や、セクション型の削除ができます。
+・レジストリーのキーを削除するときは、自動的にサブキーをすべて削除してからキーを削除します。
+ 
+%sample
+;サンプルスクリプト
+ 
+#include "regedit.hsp"
+ 
+    NewRegEdit_init 3
+    st=stat
+    mes "NewRegEdit_init stat:"+st//レジストリの初期化
+    mes
+    mes "HKEY_CLASSES_ROOT\\.txtのキー一覧を取得"
+    mes NewRegEdit_list(".txt",1)
+ 
+    mes "HSPスクリプトエディタの設定を読み込む"
+    HSEDKEY="Software\\OnionSoftware\\hsed3_3"
+    mes "キー名"+HSEDKEY
+    NewRegEdit_init 0
+    mes "キーの最大数"+NewRegEdit_listinfo(HSEDKEY,0)
+    mes "キー一覧の文字数中で最大"+NewRegEdit_listinfo(HSEDKEY,1)
+    mes "セクションの最大数"+NewRegEdit_listinfo(HSEDKEY,2)
+    mes "セクション一覧の文字数中で最大"+NewRegEdit_listinfo(HSEDKEY,3)
+    mes "セクションのデータで最大の値"+NewRegEdit_listinfo(HSEDKEY,4)
+    dialog NewRegEdit_list (HSEDKEY,1),0,"キー一覧"
+    dialog NewRegEdit_list (HSEDKEY,0),0,"セクション一覧"
+    mes "winx="+NewRegEdit_get(HSEDKEY,"winx")+" type:"+NewRegEdit_getType(HSEDKEY,"winx")
+    mes "winy="+NewRegEdit_get(HSEDKEY,"winy")+" type:"+NewRegEdit_getType(HSEDKEY,"winy")
+    mes "helpdir="+NewRegEdit_get(HSEDKEY,"helpdir")+" type:"+NewRegEdit_getType(HSEDKEY,"helpdir")
+ 
+    mes "\nキーとセクションの存在の確認"
+    mes "HSEDキーの存在:"+NewRegEdit_existKey(HSEDKEY)
+    mes "winxセクションの存在:"+NewRegEdit_existSection(HSEDKEY,"winx")
+    mes "abcセクションの存在:"+NewRegEdit_existSection(HSEDKEY,"acc")
+    mes "abcキーの存在:"+NewRegEdit_existKey("abc")
+ 
+%-------------------*/
+;レジストリ編集モジュール
+;Copyright(C) SekiSekki
+;Version:1.0.0
+;HSPでレジストリを編集するモジュールです。
+#module 
+ 
+#include "advapi32.as"
+ 
+#define HKEY_CLASSES_ROOT       $80000000
+#define HKEY_CURRENT_USER       $80000001
+#define HKEY_LOCAL_MACHINE      $80000002
+#define HKEY_USERS              $80000003
+#define HKEY_CURRENT_CONFIG     $80000005
+ 
+#define KEY_READ                $00020019
+#define KEY_WRITE               $00020006
+ 
+#define REG_OPTION_NON_VOLATILE $00000000
+ 
+#deffunc NewRegEdit_init int p1
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_init
+レジストリ編集モジュールの初期化とハイブ名(key group)の設定・再設定
+ 
+%prm
+P1:ハイブ名(ID)
+　0:HKEY_CURRENT_USER
+　1:HKEY_LOCAL_MACHINE
+　2:HKEY_USERS
+　3:HKEY_CLASSES_ROOT
+　4:HKEY_CURRENT_CONFIG 
+ 
+val:設定結果
+　int:0 正常に設定
+　int:-1 設定に失敗 
+ 
+%inst
+レジストリ編集モジュールを初期化・ハイブ名(key group)を設定・再設定します。
+NewRegEdit関連の命令・関数を実行する前に必ず呼び出される必要があります。
+ 
+%href
+regkey
+%-------------------*/
+    HIVE=0
+    if p1=0{
+        HIVE=HKEY_CURRENT_USER
+    }
+    if p1=1{
+        HIVE=HKEY_LOCAL_MACHINE
+    }   
+    if p1=2{
+        HIVE=HKEY_USERS
+    }
+    if p1=3{
+        HIVE=HKEY_CLASSES_ROOT
+    }
+    if p1=4{
+        HIVE=HKEY_CURRENT_CONFIG
+    }
+    if HIVE=0:return -1
+    initf=1
+    return 0
+#defcfunc NewRegEdit_listinfo str p1,int p2,local hkey,local name
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_listinfo
+レジストリ一覧のサイズ取得
+ 
+%inst
+レジストリ一覧のサイズを取得します。
+ 
+%prm
+(str P1,int P2)
+P1:キー名
+ 
+P2:モード
+　0:キーの最大数
+　1:キー一覧の文字数中で最大
+　2:セクションの最大数
+　3:セクション一覧の文字数中で最大
+　4:セクションのデータで最大の値(lpcMaxValueLen)
+ 
+val:戻り値
+設定結果が返ります。
+　int:0以上 サイズ値
+　int:-1 設定に失敗 
+%href
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    if p2=0{//0:キーの最大数
+        name=p1
+        hkey=0
+        RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+        if stat {return -1}
+        RegQueryInfoKey hkey,0,0,0,varptr(Len),varptr(SubLen),0,0,0,0,0,0
+        if stat {return -1}
+        return Len
+    }
+    if p2=1{//1:キー一覧の文字数中で最大
+        name=p1
+        hkey=0
+        RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+        if stat {return -1}
+        RegQueryInfoKey hkey,0,0,0,varptr(Len),varptr(SubLen),0,0,0,0,0,0
+        if stat {return -1}
+        return Sublen
+    }
+    if p2=2{//2:セクションの最大数
+        name=p1
+        hkey=0
+        RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+        if stat {return -1}
+        RegQueryInfoKey hkey,0,0,0,0,0,0,varptr(Len),varptr(SubLen),0,0,0
+        if stat {return -1}
+        return Len
+    }
+    if p2=3{//3:セクション一覧の文字数中で最大
+        name=p1
+        hkey=0
+        RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+        if stat {return -1}
+        RegQueryInfoKey hkey,0,0,0,0,0,0,varptr(Len),varptr(SubLen),0,0,0
+        if stat {return -1}
+        return Sublen
+    }
+    if p2=4{//4:セクションのデータで最大の値(lpcMaxValueLen)
+        name=p1
+        hkey=0
+        ValLen=0
+        RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+        if stat {return -1}
+        RegQueryInfoKey hkey,0,0,0,0,0,0,varptr(Len),varptr(SubLen),varptr(ValLen),0,0
+        if stat {return -1}
+        return ValLen
+    }
+    return -1
+#defcfunc NewRegEdit_list2 str p1,int p2,str p3,local hkey,local name
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_list2
+レジストリの一覧取得
+ 
+%inst
+レジストリの一覧を取得します。
+標準拡張モジュールHSPEXT.dllの:reglistに相当する機能を有します。
+ 
+%prm
+(str P1,int P2,str P3)
+P1:キー名
+ 
+P2:モード
+　0:セクション一覧
+　1:キー一覧
+    
+P3:フィルタ
+　フィルタは最初の1文字のみフィルタします。
+　文字数が2文字以上の場合は最初の1バイトのみ取り出します。
+ 
+val:戻り値
+　str:取得結果
+　int:-1 エラー 
+%href
+reglist
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    if p2=0{;セクション一覧
+        name=p1
+        hkey=0
+        RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+        if stat {return -1}
+        len=NewRegEdit_listinfo(name,2)
+        sublen=NewRegEdit_listinfo(name,3)
+        sdim data,sublen
+        sdim buf,(sublen+2)*len+2
+        stt=p3
+        filtertext=strmid(stt,0,1)
+        if filtertext=""{//フィルタ無しの場合
+            repeat len
+                lpcValueName=sublen+1
+                RegEnumValue hkey,cnt, varptr(data), varptr(lpcValueName), 0, varptr(lpType),  0,  varptr(lpcbData)
+                if stat:break
+                buf+=""+data+"\n"
+            loop    
+        }else{//フィルタありの場合
+            repeat len
+                lpcValueName=sublen+1
+                RegEnumValue hkey,cnt, varptr(data), varptr(lpcValueName), 0, varptr(lpType),  0,  varptr(lpcbData)
+                if stat:break
+                if strmid(data,0,1)!filtertext:continue
+                buf+=""+data+"\n"
+            loop
+        }
+        sdim data
+        RegCloseKey Hkey
+        return buf
+    }
+    if p2=1{;キー一覧
+        name=p1
+        hkey=0
+        RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+        if stat {return -1}
+        len=NewRegEdit_listinfo(name,0)
+        sublen=NewRegEdit_listinfo(name,1)
+        sdim data,sublen
+        sdim buf,(sublen+2)*len+2
+        stt=p3
+        filtertext=strmid(stt,0,1)
+        if filtertext=""{//フィルタ無しの場合
+            repeat len
+                lpcValueName=sublen+1
+                RegEnumKeyEx hkey,cnt, varptr(data), varptr(lpcValueName), 0,  0,  0,  varptr(lpcbData)
+                if stat:break
+                buf+=""+data+"\n"
+            loop
+        }else{//フィルタありの場合
+            repeat len
+                lpcValueName=sublen+1
+                RegEnumKeyEx hkey,cnt, varptr(data), varptr(lpcValueName), 0,  0,  0,  varptr(lpcbData)
+                if stat:break
+                if strmid(data,0,1)!filtertext:continue
+                buf+=""+data+"\n"
+            loop
+        }
+        sdim data
+        RegCloseKey Hkey
+        return buf
+    }
+    return -1
+#defcfunc NewRegEdit_list str p1,int p2,local hkey,local name
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_list
+レジストリの一覧を取得
+ 
+%inst
+レジストリの一覧を取得します。
+標準拡張モジュールHSPEXT.dllの:reglistに相当する機能を有します。
+ 
+%prm
+(str P1,int P2)
+P1:キー名
+ 
+P2:モード
+　0:セクション一覧
+　1:キー一覧
+ 
+ 
+val:戻り値
+str型:取得結果を返します。
+int型:以下の値を返します。
+　-1:エラー 
+%href
+reglist
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    if p2=0{;セクション一覧
+        return NewRegEdit_list2(p1,0,"")
+    }
+    if p2=1{;キー一覧
+        return NewRegEdit_list2(p1,1,"")
+    }
+    return -1
+#defcfunc NewRegEdit_getType str p1,str p2,local hkey,local name,local type
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_getType
+セクションの型を取得
+ 
+%inst
+セクションの型を取得します。
+ 
+ 
+%prm
+(str P1,str P2)
+P1:キー名
+ 
+P2:セクション名
+ 
+val:戻り値
+　int:セクションの型(下記参照)
+　int:-1の場合はエラー
+ 
+※セクションの型の詳細は以下のとおりです。
+定数名　値　意味
+REG_NONE　0　定義されていない型
+REG_SZ　1　文字列
+REG_EXPAND_SZ　2　展開前の環境変数への参照 (例えば“%PATH%”など) が入った文字列
+REG_BINARY　3　バイナリデータ
+REG_DWORD 　4 　32ビットの数値(リトルエンディアン形式)
+REG_DWORD_BIG_ENDIAN 　5 　32ビットの数値(ビッグエンディアン形式)
+REG_LINK 　6 　Unicode シンボリックリンク
+REG_MULTI_SZ 　7 　ヌル終端文字列の配列　配列はヌル文字で区切られ、連続する2つのヌル文字が配列の終端となる。
+REG_RESOURCE_LIST　8　デバイスドライバのリソースリスト
+REG_QWORD　11　64ビット数値
+%href
+ 
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    name=p1
+    section=p2
+    hkey=0
+    RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+    if stat {return 0}
+    len=0
+    type=0
+    RegQueryValueEx hkey, varptr(section), 0, varptr(type), NULL, varptr (len)
+    if stat {
+        if section="":return 1//値の設定なしの場合は文字列型として扱う
+        return 0//定義されていない型
+    }
+    return type
+#defcfunc NewRegEdit_get str p1,str p2,local hkey,local name
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_get
+レジストリのセクション値を取得
+ 
+%inst
+レジストリのセクションの値を取得します。
+hspext.dllのgetregに相当する命令です。
+ 
+%prm
+(str P1,int P2)
+P1:キー名
+ 
+P2:セクション名
+ 
+val:戻り値
+int型:取得結果を返します。(整数値)
+str型:取得結果を返します。(文字列型)
+　※正常に取得できなかった場合は空欄の文字列が返されます。
+%href
+getreg
+NewRegEdit_getType
+%-------------------*/
+    data=""
+    size=0
+    type=NewRegEdit_getB(data,size,p1,p2)
+    if type=4{//int
+        i=0
+        repeat 4
+            poke i,cnt,peek (data,cnt)
+        loop
+        return i
+    }
+    if type=5{//int(ビッグエンディアン)
+        i=0
+        repeat 4
+            poke i,cnt,peek (data,3-cnt)
+        loop
+        return i
+    }
+    if type=11{//64bit int
+        i=0,0
+        repeat 4
+            poke i,cnt,peek (data,cnt)
+        loop
+        repeat 4
+            poke i.1,cnt,peek (data,cnt+4)
+        loop
+        return i.0//32ビット分だけ取得する
+    }
+    return ""+data
+#defcfunc NewRegEdit_getB var b1,var b2,str p1,str p2,local hkey,local name
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_getB
+レジストリのセクションの値を取得(バイナリモード)
+ 
+%inst
+レジストリのセクションの値をバイナリで取得します。
+hspext.dllのgetregに相当する命令です。
+%prm
+(var B1,var B2,str P1,str P2)
+　B1 取得した値の書込先の変数
+　B2 取得した値のサイズの書込先の変数
+　P1 キー名
+　P2 セクション名
+ 
+val:戻り値
+　int:セクションの型を返します。
+　int:-1の場合はエラー
+%href
+getreg
+NewRegEdit_getType
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    name=p1
+    section=p2
+    hkey=0
+    type=0
+    sdim b1
+    RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+    if stat {return -1}
+    b2=0
+    RegQueryValueEx hkey, varptr(section), 0, NULL, NULL, varptr (b2)
+    if stat {
+        return -1
+    } else {
+        sdim b1,b2
+        RegQueryValueEx hkey, varptr(section), 0, varptr(type), varptr(b1), varptr(b2)
+        return type
+    }
+    return -1
+#defcfunc NewRegEdit_existSection str p1,str p2,local hkey,local name
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_existSection
+セクションの存在確認
+ 
+%inst
+レジストリのセクションが存在しているか確認します。
+ 
+%prm
+(str P1,str P2)
+　P1 キー名
+　P2 セクション名
+ 
+val:戻り値
+　int:1 存在
+　int:0 存在しないまたはエラー
+%href
+%-------------------*/
+    if initf=0{
+        return 0
+    }
+    name=p1
+    section=p2
+    hkey=0
+    RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+    if stat {return 0}
+    len=0
+    RegQueryValueEx hkey, varptr(section), 0, NULL, NULL, varptr (len)
+    if stat {
+        return 0
+    }
+    return 1
+#defcfunc NewRegEdit_existKey str p1,local hkey,local name
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_existKey
+レジストリキーの存在確認
+ 
+%inst
+レジストリのキーが存在しているか確認します。
+ 
+%prm
+(str P1)
+　P1 キー名
+ 
+val:戻り値
+　int:1 存在
+　int:0 存在しないまたはエラー
+%href
+%-------------------*/
+    if initf=0{
+        return 0
+    }
+    name=p1
+    hkey=0
+    RegOpenKeyEx HIVE, varptr(name), 0, KEY_READ, varptr(hkey)
+    if stat {return 0}
+    return 1
+///////レジストリの書き込み
+#deffunc NewRegEdit_newKey str p1,local hkey
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_newKey
+レジストリキーの新規作成
+ 
+%inst
+レジストリキーを作成します。
+hspext.dllにおけるregkey の新規作成モードと同じ処理となります。
+%prm
+str P1
+　P1 キー名
+ 
+stat:戻り値
+　int:0 キーの作成に成功
+　int:-1 キーの作成に失敗
+%href
+regkey
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    hkey=0
+    keyname=p1
+    RegCreateKeyEx HIVE,varptr(keyname),0,NULL,REG_OPTION_NON_VOLATILE,KEY_WRITE,NULL,varptr(hkey),NULL
+    if stat {return -1}
+    return 0
+#deffunc NewRegEdit_set var b1,str p2,str p3,local hkey
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_set
+レジストリのセクションの作成または変更
+ 
+%inst
+レジストリのセクションを作成または変更します。
+指定したキーまたはセクションが存在しない場合は自動的に作成します。
+hspext.dllの setreg に相当する機能となります。
+ 
+%prm
+var B1,str p2,str p3
+　B1 セクションに書き込む内容
+　　　変数の型を判別し、自動的に型を設定します。
+　　　HSPの型がintの場合は整数型、
+　　　HSPの型がstr,doubleの場合は文字列型、(実数の場合は小数点以下6桁までを文字列に変換する)
+　　　それ以外の型は、エラーを返します。
+　P2 キー名
+　P3 セクション名
+ 
+stat:戻り値
+　int:0 書き込みに成功
+　int:-1 書き込みに失敗
+ 
+%href
+setreg
+NewRegEdit_getType
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    if vartype(b1)=2{;文字列
+        type=1
+        data=""+b1
+        len=strlen(data)
+    }else:if vartype(b1)=3{;実数
+        type=1
+        data=""+b1
+        len=strlen(data)
+    }else:if vartype(b1)=4{;整数
+        type=4
+        data=int(b1)
+        len=4
+    }else{
+        return -1;その他の型は登録できない
+    }
+    NewRegEdit_setB data,p2,p3,type,len
+    if stat:return -1
+    return 0
+#deffunc NewRegEdit_setB var b1,str p2,str p3,int p4,int p5,local hkey
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_setB
+レジストリのセクションの作成または変更(バイナリモード)
+ 
+%inst
+レジストリのセクションを作成します。
+指定したキーまたはセクションが存在しない場合は自動的に作成します。
+hspext.dllの setreg に相当する機能となります。
+ 
+%prm
+var B1,str p2,str p3,int p4,int p5
+　B1 セクションに書き込む内容
+　P2 キー名
+　P3 セクション名
+　P4 セクションの型(詳細はNewRegEdit_getTypeを参照)
+　P5 セクションのサイズ
+ 
+stat:戻り値
+　int:0 書き込みに成功
+　int:-1 書き込みに失敗
+ 
+%href
+setreg
+NewRegEdit_getType
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    keyname=p2
+    section=p3
+    type=p4
+    Len=p5
+    if Len<=0{
+        if vartype(b1)=2{
+            Len=strlen(b1)
+        }else:if vartype(b1)=4{
+            Len=4
+        }else{
+            retuen -1
+        }
+    }
+    NewRegEdit_newKey keyname
+    hkey=0
+    RegOpenKeyEx HIVE, varptr(keyname), 0, KEY_WRITE, varptr(hkey)
+    st=stat
+    RegSetValueExA hkey,varptr(section),0,type,varptr(b1),Len
+    st=stat
+    RegCloseKey hkey
+    if st {return -1}
+    return
+#deffunc NewRegEdit_copyAllSections str p1,str p2,local list
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_copyAllSections
+レジストリセクションの一括コピー
+ 
+%inst
+指定したキーにおけるセクションを全てコピーします。
+ 
+%prm
+str p1,str p2
+　P1 コピー元のキーアドレス
+　P2 コピー先のキーアドレス
+ 
+stat:戻り値
+　int:0 書き込みに成功
+　int:-1 書き込みに失敗
+ 
+%href
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    sectionlist=""+NewRegEdit_list(p1,0)//セクション一覧の取得
+    sdim list
+    split sectionlist,"\n",list
+    NewRegEdit_newKey p2
+    repeat length(list)
+        NewRegEdit_copySectionRename p1,p2,list.cnt,list.cnt
+        if stat {continue}
+    loop
+    sdim sectionlist
+    sdim list
+    return 0
+#deffunc NewRegEdit_copySection str p1,str p2,str p3
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_copySection
+レジストリセクションのコピー
+ 
+%inst
+レジストリの特定のセクションをコピーします。
+ 
+%prm
+str P1,str P2,str P3
+　P1 コピー元のキーアドレス
+　P2 コピー先のキーアドレス
+　P3 セクション名
+ 
+stat:戻り値
+　int:0 書き込みに成功
+　int:-1 書き込みに失敗
+ 
+%href
+%-------------------*/
+    NewRegEdit_copySectionRename p1,p2,p3,p3
+    return stat
+#deffunc NewRegEdit_copySectionRename str p1,str p2,str p3,str p4,local hkey
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_copySectionRename
+レジストリセクションのコピー(セクション名の変更を含む)
+ 
+%inst
+レジストリの特定のセクションをコピーします。(セクション名の変更を含む)
+ 
+%prm
+str P1,str P2,str P3
+　P1 コピー元のキーアドレス
+　P2 コピー先のキーアドレス
+　P3 セクション名
+　P4 変更後のセクション名
+ 
+stat:戻り値
+　int:0 書き込みに成功
+　int:-1 書き込みに失敗
+ 
+%href
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    moto=p1
+    saki=p2
+    NewRegEdit_newKey saki
+    if NewRegEdit_existSection(moto,p3)=0{
+        return -1
+    }
+    section=p3
+    ccection=""+p4
+    sdim data
+    type=NewRegEdit_getB(data,Len,moto,section)
+    hkey=0
+    RegOpenKeyEx HIVE, varptr(saki), 0, KEY_WRITE, varptr(hkey)
+    if stat {return -1}
+    //コピー先への書き込み
+    RegSetValueExA hkey,varptr(ccection),0,type,varptr(data),Len
+    st=stat
+    RegCloseKey hkey
+    if st {return -1}
+    return 0
+#deffunc NewRegEdit_deleteKey str p1,local main,local address,local address2,local hkey2,local list,local hkey
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_deleteKey
+レジストリのキーとその中のサブキーとサブセクションの削除
+ 
+%inst
+レジストリのキーとその中のサブキーとサブセクションを削除します。
+hspext.dllのregkillに相当する命令です。
+※コンピュータの安全上、トップキー(P1が空のとき)は削除できないようにしています。
+%prm
+str P1
+　P1 削除するキーアドレス
+ 
+stat:戻り値
+　int:0 書き込みに成功
+　int:-1 書き込みに失敗
+ 
+%href
+regkill
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    if p1=0:return -2//トップキー(無記入)は削除できないようにする
+    main=p1
+    w=getpath(main,32)
+    address2=strtrim(w,2,'\\');削除する上位のキー
+    address=getpath(main,8);削除するキー
+    hkey2=0
+    RegOpenKeyEx HIVE, varptr(address2), 0, KEY_WRITE, varptr(hkey2)
+    if stat {return -1}
+    sl=NewRegEdit_list (main,1)//1がキー一覧
+    sdim list
+    split sl,"\n",list
+    repeat length(list)
+        if list(cnt)="":continue
+        NewRegEdit_deleteKey main+"\\"+list(cnt)
+    loop
+    RegDeleteKey hkey2,address
+    st=stat
+    RegCloseKey hkey2
+    if st {return -1}
+    return 0
+#deffunc NewRegEdit_deleteSection str p1,str p2
+/*---------HDL 説明事項----------
+%index
+NewRegEdit_deleteSection
+レジストリのキーとその中のサブキーとサブセクションの削除
+ 
+%inst
+レジストリのセクションを削除します。
+ 
+%prm
+str P1,str P2
+　P1 削除するキー名
+　P2 削除するセクション名
+ 
+stat:戻り値
+　int:0 書き込みに成功
+　int:-1 書き込みに失敗
+ 
+%href
+%-------------------*/
+    if initf=0{
+        return -1
+    }
+    hkey=0
+    address=p1
+    section=p2
+    RegOpenKeyEx HIVE, varptr(address), 0, KEY_WRITE, varptr(hkey)
+    if stat {return -1}
+    RegDeleteValue hkey,section
+    st=stat
+    RegCloseKey hkey
+    if st {return -1}
+    return 0
+#global
